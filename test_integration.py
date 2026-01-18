@@ -1,187 +1,145 @@
 import pytest
-import tkinter as tk
-from unittest.mock import patch, MagicMock
-from crm_4_implementation import (
-    TicTacToeGame, 
-    GameEngine, 
-    Player, 
-    CellState, 
-    GameState,
-    AIPlayer,
-    HumanPlayer
-)
+from unittest.mock import MagicMock, patch
+from crm_8_implementation import ColorTheme, TicTacToeBoard, TicTacToeGame, DisplayEngine
 
-@pytest.fixture
-def root():
-    """Provides a fresh Tkinter root instance for each test."""
-    root = tk.Tk()
-    yield root
-    root.destroy()
+class TestTicTacToeGreenThemeIntegration:
+    """
+    Integration tests for the Tic Tac Toe CRM-8 Green Color Update.
+    Verifies interaction between ColorTheme, Board logic, and Display output.
+    """
 
-@pytest.fixture
-def game_instance(root):
-    """Provides an initialized instance of the TicTacToeGame UI and Engine."""
-    app = TicTacToeGame(root)
-    return app
+    @pytest.fixture(autouse=True)
+    def setup_teardown(self):
+        """
+        Setup and teardown for each test case.
+        Ensures a clean state for the ColorTheme configuration.
+        """
+        # Setup logic if global state existed
+        yield
+        # Teardown logic if global state existed
 
-class TestTicTacToeIntegration:
-    """Integration tests for the Tic Tac Toe system components."""
+    @pytest.fixture
+    def game_engine(self):
+        """Provides a fresh instance of the TicTacToeGame with the Green theme."""
+        return TicTacToeGame(theme=ColorTheme())
 
-    def test_initialization_state(self, game_instance):
-        """Tests that the UI and Engine are correctly synchronized upon startup."""
-        assert game_instance.engine.current_state == GameState.PLAYING
-        assert len(game_instance.buttons) == 9
-        for btn in game_instance.buttons:
-            assert btn["text"] == ""
-            assert btn["state"] == tk.NORMAL
+    @pytest.fixture
+    def mock_display(self):
+        """Mocks the terminal display to capture ANSI output."""
+        with patch('crm_8_implementation.DisplayEngine.render') as mocked_render:
+            yield mocked_render
 
-    def test_human_move_updates_ui_and_engine(self, game_instance):
-        """Tests that clicking a button updates both the logic engine and the UI text."""
-        # Simulate clicking the center cell (index 4)
-        center_button = game_instance.buttons[4]
+    def test_color_theme_integration_with_board_state(self, game_engine):
+        """
+        Scenario: Verify that the Board correctly associates moves with Theme colors.
+        Tests integration between ColorTheme and TicTacToeBoard.
+        """
+        game_engine.make_move(0, 0)  # X moves to top-left
+        cell_value = game_engine.board.get_cell(0, 0)
         
-        # Manually trigger the command associated with the button
-        game_instance.handle_click(4)
-        
-        # Check Engine State
-        assert game_instance.engine.board[4] != CellState.EMPTY
-        
-        # Check UI State
-        assert center_button["text"] in ["X", "O"]
-        assert center_button["state"] == tk.DISABLED
+        # Verify the cell contains the X marker
+        assert "X" in cell_value
+        # Verify the cell contains the Green ANSI code defined in ColorTheme
+        assert ColorTheme.X_COLOR in cell_value
+        assert ColorTheme.RESET in cell_value
 
-    @patch('tkinter.messagebox.showinfo')
-    def test_win_condition_integration(self, mock_showinfo, game_instance):
-        """Tests a full sequence of moves leading to a win and UI notification."""
-        # Setup engine for a quick win for 'X' on top row
-        # X: 0, 1, 2
-        # O: 3, 4
-        moves = [0, 3, 1, 4, 2]
+    def test_full_game_flow_to_victory_with_colors(self, game_engine):
+        """
+        Scenario: Execute a full game resulting in a win.
+        Verifies that win detection logic works alongside color-coded markers.
+        """
+        # Moves to make X win on the top row
+        moves = [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2)]
+        for r, c in moves:
+            game_engine.make_move(r, c)
+
+        assert game_engine.check_winner() == "X"
+        assert game_engine.is_game_over() is True
         
-        for move in moves:
-            game_instance.handle_click(move)
+        # Verify board state integrity with colors
+        board_snapshot = game_engine.board.get_grid()
+        assert ColorTheme.X_COLOR in board_snapshot[0][0]
+        assert ColorTheme.X_COLOR in board_snapshot[0][1]
+        assert ColorTheme.X_COLOR in board_snapshot[0][2]
+
+    def test_display_engine_renders_green_theme(self, game_engine, mock_display):
+        """
+        Scenario: Test the API/Interface between Game Logic and Display Engine.
+        Ensures the UI component receives strings formatted with the Green theme.
+        """
+        game_engine.make_move(1, 1) # X takes center
+        game_engine.render_board()
+
+        # Capture the call arguments to the display engine
+        args, _ = mock_display.call_args
+        rendered_output = args[0]
+
+        assert ColorTheme.X_COLOR in rendered_output
+        assert "X" in rendered_output
+        assert ColorTheme.PRIMARY_COLOR == "Green"
+
+    def test_theme_contrast_between_players(self, game_engine):
+        """
+        Scenario: Verify that X (Green) and O (Blue) have distinct ANSI codes in the board.
+        Tests integration of multiple theme properties within the board container.
+        """
+        game_engine.make_move(0, 0) # X (Green)
+        game_engine.make_move(1, 1) # O (Blue)
+
+        x_cell = game_engine.board.get_cell(0, 0)
+        o_cell = game_engine.board.get_cell(1, 1)
+
+        assert ColorTheme.X_COLOR in x_cell
+        assert ColorTheme.O_COLOR in o_cell
+        assert x_cell != o_cell
+
+    def test_invalid_move_does_not_affect_theme_consistency(self, game_engine):
+        """
+        Scenario: Attempt an invalid move and ensure the board theme remains consistent.
+        """
+        game_engine.make_move(0, 0)
+        initial_color_count = str(game_engine.board.get_grid()).count(ColorTheme.X_COLOR)
+        
+        # Attempt to move in the same spot
+        with pytest.raises(ValueError):
+            game_engine.make_move(0, 0)
             
-        assert game_instance.engine.current_state == GameState.WIN
-        assert mock_showinfo.called
-        assert "Winner" in mock_showinfo.call_args[0][0] or "Winner" in mock_showinfo.call_args[0][1]
+        final_color_count = str(game_engine.board.get_grid()).count(ColorTheme.X_COLOR)
+        assert initial_color_count == final_color_count
 
-    def test_ai_integration_after_human_move(self, game_instance):
-        """Tests that the AI automatically moves after a human player makes a move."""
-        # Ensure the game is set to Human vs AI
-        game_instance.set_player_mode("PvE")
+    def test_reset_functionality_clears_colors(self, game_engine):
+        """
+        Scenario: Resetting the game should clear all colored markers from the board.
+        """
+        game_engine.make_move(0, 0)
+        game_engine.reset_game()
         
-        # Human moves
-        game_instance.handle_click(0)
-        
-        # Force UI update to process any pending events/after() calls
-        game_instance.root.update()
-        
-        # Count non-empty cells
-        filled_cells = [c for c in game_instance.engine.board if c != CellState.EMPTY]
-        
-        # Should be 2: one from human, one from AI
-        assert len(filled_cells) == 2
+        grid = game_engine.board.get_grid()
+        for row in grid:
+            for cell in row:
+                assert ColorTheme.X_COLOR not in cell
+                assert ColorTheme.O_COLOR not in cell
+                assert cell == "" or cell == " "
 
-    def test_reset_functionality(self, game_instance):
-        """Tests that the reset button clears both engine and UI states."""
-        # Make some moves
-        game_instance.handle_click(0)
-        game_instance.handle_click(1)
-        
-        # Trigger Reset
-        game_instance.reset_game()
-        
-        # Verify Engine
-        assert all(cell == CellState.EMPTY for cell in game_instance.engine.board)
-        assert game_instance.engine.current_state == GameState.PLAYING
-        
-        # Verify UI
-        for btn in game_instance.buttons:
-            assert btn["text"] == ""
-            assert btn["state"] == tk.NORMAL
+    @pytest.mark.parametrize("marker, expected_color", [
+        ("X", ColorTheme.X_COLOR),
+        ("O", ColorTheme.O_COLOR)
+    ])
+    def test_marker_color_mapping(self, game_engine, marker, expected_color):
+        """
+        Scenario: Data-driven test to ensure correct mapping of markers to theme colors.
+        """
+        formatted_marker = game_engine.theme.apply_color(marker)
+        assert expected_color in formatted_marker
+        assert marker in formatted_marker
+        assert ColorTheme.RESET in formatted_marker
 
-    @patch('tkinter.messagebox.showinfo')
-    def test_draw_condition_integration(self, mock_showinfo, game_instance):
-        """Tests that a full board with no winner results in a DRAW state."""
-        # Sequence for a draw:
-        # X O X
-        # X O O
-        # O X X
-        draw_moves = [0, 1, 2, 4, 3, 5, 7, 6, 8]
-        
-        for move in draw_moves:
-            game_instance.handle_click(move)
-            
-        assert game_instance.engine.current_state == GameState.DRAW
-        assert mock_showinfo.called
-        assert "Draw" in mock_showinfo.call_args[0][1]
-
-    def test_theme_application_on_ui_components(self, game_instance):
-        """Tests that the Theme constants are correctly applied to UI widgets."""
-        from crm_4_implementation import Theme
-        
-        # Check background of the main container
-        assert game_instance.main_frame.cget("bg") == Theme.BACKGROUND
-        
-        # Check if buttons use the surface color
-        assert game_instance.buttons[0].cget("bg") == Theme.SURFACE
-
-    def test_invalid_move_prevention(self, game_instance):
-        """Tests that clicking an already occupied cell does not change the engine state."""
-        game_instance.handle_click(0)
-        first_player = game_instance.engine.board[0]
-        
-        # Try clicking the same cell again
-        game_instance.handle_click(0)
-        
-        # Ensure it's still the same player's mark and engine didn't crash
-        assert game_instance.engine.board[0] == first_player
-        # Ensure turn didn't advance (next move should still be valid elsewhere)
-        assert game_instance.engine.turn_count == 1
-
-    def test_player_switching_logic(self, game_instance):
-        """Tests that the engine correctly toggles between Player X and Player O."""
-        initial_player = game_instance.engine.current_player
-        
-        game_instance.handle_click(0)
-        second_player = game_instance.engine.current_player
-        
-        assert initial_player != second_player
-        
-        game_instance.handle_click(1)
-        third_player = game_instance.engine.current_player
-        
-        assert third_player == initial_player
-
-    def test_score_tracking_integration(self, game_instance):
-        """Tests that winning a game updates the score tracking component."""
-        initial_score_x = game_instance.scores['X']
-        
-        # Simulate X winning
-        # X: 0, 1, 2
-        # O: 3, 4
-        moves = [0, 3, 1, 4, 2]
-        with patch('tkinter.messagebox.showinfo'):
-            for move in moves:
-                game_instance.handle_click(move)
-                
-        assert game_instance.scores['X'] == initial_score_x + 1
-        assert "1" in game_instance.score_labels['X'].cget("text")
-
-def test_ai_difficulty_minimax_integration(root):
-    """Tests that the AI uses Minimax logic to block an immediate win."""
-    app = TicTacToeGame(root)
-    app.set_player_mode("PvE")
-    app.engine.difficulty = "Hard"
-    
-    # Human (X) takes 0 and 1. AI (O) must take 2 to block.
-    app.handle_click(0) # Human
-    # AI moves automatically
-    app.handle_click(1) # Human
-    # AI moves automatically
-    
-    # Check if AI blocked at index 2
-    assert app.engine.board[2] == CellState.PLAYER_O or app.engine.board[2] != CellState.EMPTY
-
-if __name__ == "__main__":
-    pytest.main([__file__])
+def test_singleton_theme_behavior():
+    """
+    Scenario: Ensure that the Green color update is applied globally if 
+    ColorTheme is used as a configuration manager.
+    """
+    theme1 = ColorTheme()
+    theme2 = ColorTheme()
+    assert theme1.PRIMARY_COLOR == theme2.PRIMARY_COLOR
+    assert theme1.PRIMARY_COLOR == "Green"
