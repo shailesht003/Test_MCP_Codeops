@@ -1,183 +1,338 @@
 """
 Tic Tac Toe Game Implementation
 
-This module provides a complete implementation of the Tic Tac Toe game
-with HTML, CSS, and JavaScript integration using Python backend.
+This module provides a complete implementation of a Tic Tac Toe game
+using HTML, CSS, and JavaScript with a Python backend for game logic.
 """
 
-import json
 from typing import List, Optional, Tuple, Dict, Any
-from enum import Enum
-from dataclasses import dataclass
+import json
 
 
-class Player(Enum):
-    """Enumeration representing game players."""
-    X = "X"
-    O = "O"
-    EMPTY = ""
-
-
-class GameStatus(Enum):
-    """Enumeration representing game states."""
-    PLAYING = "playing"
-    X_WINS = "x_wins"
-    O_WINS = "o_wins"
-    DRAW = "draw"
-
-
-@dataclass
-class GameMove:
-    """Represents a single move in the game."""
-    player: Player
-    position: int
-
-
-class TicTacToeGame:
+class Player:
     """
-    Main game controller for Tic Tac Toe implementation.
+    Represents a player in the Tic Tac Toe game.
     
-    This class manages the game state, player turns, win conditions,
-    and provides methods to interact with the game.
+    Attributes:
+        symbol (str): The symbol representing the player ('X' or 'O')
+        name (str): The name of the player
     """
-
-    def __init__(self) -> None:
-        """Initialize a new Tic Tac Toe game."""
-        self.board: List[Player] = [Player.EMPTY] * 9
-        self.current_player: Player = Player.X
-        self.game_status: GameStatus = GameStatus.PLAYING
-        self.move_history: List[GameMove] = []
-        self.winning_combinations: List[List[int]] = [
-            [0, 1, 2], [3, 4, 5], [6, 7, 8],  # Rows
-            [0, 3, 6], [1, 4, 7], [2, 5, 8],  # Columns
-            [0, 4, 8], [2, 4, 6]              # Diagonals
-        ]
-
-    def make_move(self, position: int) -> bool:
+    
+    def __init__(self, symbol: str, name: str = "Player"):
         """
-        Make a move at the specified position.
+        Initialize a new player.
         
         Args:
-            position: The board position (0-8) to make a move
+            symbol (str): The symbol representing the player ('X' or 'O')
+            name (str): The name of the player
+        """
+        if symbol not in ['X', 'O']:
+            raise ValueError("Player symbol must be either 'X' or 'O'")
+        
+        self.symbol = symbol
+        self.name = name
+
+
+class GameBoard:
+    """
+    Represents the game board for Tic Tac Toe.
+    
+    The board is a 3x3 grid where each position can be empty or contain
+    a player's symbol.
+    """
+    
+    def __init__(self):
+        """Initialize an empty 3x3 game board."""
+        self.size = 3
+        self.board = [['' for _ in range(self.size)] for _ in range(self.size)]
+    
+    def get_cell(self, row: int, col: int) -> str:
+        """
+        Get the value of a specific cell.
+        
+        Args:
+            row (int): The row index (0-2)
+            col (int): The column index (0-2)
             
         Returns:
-            bool: True if the move was successful, False otherwise
+            str: The symbol in the cell or empty string if empty
             
         Raises:
-            ValueError: If position is out of range
+            IndexError: If row or col is out of bounds
         """
-        if not 0 <= position <= 8:
-            raise ValueError("Position must be between 0 and 8")
-            
-        if self.board[position] != Player.EMPTY:
-            return False
-            
-        # Make the move
-        self.board[position] = self.current_player
-        self.move_history.append(GameMove(self.current_player, position))
+        if not (0 <= row < self.size and 0 <= col < self.size):
+            raise IndexError("Row or column index out of bounds")
         
-        # Check for win or draw
-        self._check_game_end()
+        return self.board[row][col]
+    
+    def set_cell(self, row: int, col: int, symbol: str) -> bool:
+        """
+        Set the value of a specific cell.
         
-        # Switch player
-        if self.game_status == GameStatus.PLAYING:
-            self.current_player = Player.O if self.current_player == Player.X else Player.X
+        Args:
+            row (int): The row index (0-2)
+            col (int): The column index (0-2)
+            symbol (str): The symbol to set ('X' or 'O')
             
-        return True
-
-    def _check_game_end(self) -> None:
+        Returns:
+            bool: True if the cell was successfully set, False otherwise
+            
+        Raises:
+            IndexError: If row or col is out of bounds
+            ValueError: If symbol is not valid
         """
-        Check if the game has ended (win or draw).
+        if not (0 <= row < self.size and 0 <= col < self.size):
+            raise IndexError("Row or column index out of bounds")
         
-        Updates the game_status based on current board state.
+        if symbol not in ['X', 'O']:
+            raise ValueError("Symbol must be either 'X' or 'O'")
+        
+        if self.board[row][col] == '':
+            self.board[row][col] = symbol
+            return True
+        
+        return False
+    
+    def is_full(self) -> bool:
         """
-        # Check for win
-        for combination in self.winning_combinations:
-            if (self.board[combination[0]] == self.board[combination[1]] == 
-                self.board[combination[2]] != Player.EMPTY):
-                if self.board[combination[0]] == Player.X:
-                    self.game_status = GameStatus.X_WINS
-                else:
-                    self.game_status = GameStatus.O_WINS
-                return
-                
-        # Check for draw
-        if all(cell != Player.EMPTY for cell in self.board):
-            self.game_status = GameStatus.DRAW
-
-    def get_board_state(self) -> List[str]:
-        """
-        Get the current board state as strings.
+        Check if the board is completely filled.
         
         Returns:
-            List[str]: Current board state with player symbols or empty strings
+            bool: True if all cells are filled, False otherwise
         """
-        return [cell.value for cell in self.board]
+        for row in self.board:
+            if '' in row:
+                return False
+        return True
+    
+    def reset(self):
+        """Reset the board to an empty state."""
+        self.board = [['' for _ in range(self.size)] for _ in range(self.size)]
+    
+    def to_dict(self) -> List[List[str]]:
+        """
+        Convert the board state to a dictionary representation.
+        
+        Returns:
+            List[List[str]]: The current board state as a nested list
+        """
+        return [row[:] for row in self.board]
 
+
+class WinChecker:
+    """
+    Utility class to check win conditions in Tic Tac Toe.
+    
+    This class provides methods to determine if a player has won
+    by completing a row, column, or diagonal.
+    """
+    
+    @staticmethod
+    def check_winner(board: GameBoard) -> Optional[str]:
+        """
+        Check if there is a winner on the board.
+        
+        Args:
+            board (GameBoard): The current game board
+            
+        Returns:
+            Optional[str]: The winning symbol ('X' or 'O') if there is a winner,
+                          None otherwise
+        """
+        # Check rows
+        for row in range(board.size):
+            if board.get_cell(row, 0) != '' and \
+               board.get_cell(row, 0) == board.get_cell(row, 1) == board.get_cell(row, 2):
+                return board.get_cell(row, 0)
+        
+        # Check columns
+        for col in range(board.size):
+            if board.get_cell(0, col) != '' and \
+               board.get_cell(0, col) == board.get_cell(1, col) == board.get_cell(2, col):
+                return board.get_cell(0, col)
+        
+        # Check diagonals
+        if board.get_cell(0, 0) != '' and \
+           board.get_cell(0, 0) == board.get_cell(1, 1) == board.get_cell(2, 2):
+            return board.get_cell(0, 0)
+        
+        if board.get_cell(0, 2) != '' and \
+           board.get_cell(0, 2) == board.get_cell(1, 1) == board.get_cell(2, 0):
+            return board.get_cell(0, 2)
+        
+        return None
+    
+    @staticmethod
+    def is_board_full(board: GameBoard) -> bool:
+        """
+        Check if the board is full (tie condition).
+        
+        Args:
+            board (GameBoard): The current game board
+            
+        Returns:
+            bool: True if the board is full, False otherwise
+        """
+        return board.is_full()
+
+
+class GameEngine:
+    """
+    Main game engine that orchestrates the Tic Tac Toe game flow.
+    
+    This class manages player turns, game state, and interactions between
+    the board and win checking logic.
+    """
+    
+    def __init__(self):
+        """Initialize the game engine with default players and state."""
+        self.players = [
+            Player('X', "Player X"),
+            Player('O', "Player O")
+        ]
+        self.current_player_index = 0
+        self.board = GameBoard()
+        self.game_state = "waiting"  # waiting, playing, won, tied
+        self.winner = None
+        self.move_history = []
+    
+    def get_current_player(self) -> Player:
+        """
+        Get the player who is currently making a move.
+        
+        Returns:
+            Player: The current player object
+        """
+        return self.players[self.current_player_index]
+    
+    def make_move(self, row: int, col: int) -> Dict[str, Any]:
+        """
+        Make a move on the board at the specified position.
+        
+        Args:
+            row (int): The row index (0-2)
+            col (int): The column index (0-2)
+            
+        Returns:
+            Dict[str, Any]: A dictionary containing the move result and state
+            
+        Raises:
+            ValueError: If the position is invalid or occupied
+        """
+        try:
+            # Validate move position
+            if not (0 <= row < self.board.size and 0 <= col < self.board.size):
+                raise ValueError("Invalid position")
+            
+            # Check if cell is already occupied
+            if self.board.get_cell(row, col) != '':
+                raise ValueError("Position already occupied")
+            
+            # Make the move
+            symbol = self.get_current_player().symbol
+            success = self.board.set_cell(row, col, symbol)
+            
+            if not success:
+                raise ValueError("Failed to make move")
+            
+            # Record the move
+            self.move_history.append((row, col, symbol))
+            
+            # Check win condition
+            winner = WinChecker.check_winner(self.board)
+            
+            if winner:
+                self.game_state = "won"
+                self.winner = winner
+                return {
+                    "success": True,
+                    "game_state": self.game_state,
+                    "winner": winner,
+                    "board": self.board.to_dict(),
+                    "message": f"Player with symbol '{winner}' wins!"
+                }
+            
+            # Check tie condition
+            if WinChecker.is_board_full(self.board):
+                self.game_state = "tied"
+                return {
+                    "success": True,
+                    "game_state": self.game_state,
+                    "winner": None,
+                    "board": self.board.to_dict(),
+                    "message": "Game ended in a tie!"
+                }
+            
+            # Switch to next player
+            self.current_player_index = (self.current_player_index + 1) % len(self.players)
+            
+            return {
+                "success": True,
+                "game_state": self.game_state,
+                "winner": None,
+                "board": self.board.to_dict(),
+                "message": f"Move successful. Next player: {self.get_current_player().name}"
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "board": self.board.to_dict()
+            }
+    
+    def reset_game(self):
+        """Reset the game to initial state."""
+        self.current_player_index = 0
+        self.board.reset()
+        self.game_state = "waiting"
+        self.winner = None
+        self.move_history = []
+    
     def get_game_state(self) -> Dict[str, Any]:
         """
-        Get complete game state for serialization.
+        Get the current state of the game.
         
         Returns:
-            Dict[str, Any]: Complete game state dictionary
+            Dict[str, Any]: A dictionary containing the current game state
         """
         return {
-            "board": self.get_board_state(),
-            "current_player": self.current_player.value,
-            "game_status": self.game_status.value,
-            "move_history": [
-                {
-                    "player": move.player.value,
-                    "position": move.position
-                } for move in self.move_history
-            ]
+            "game_state": self.game_state,
+            "current_player": self.get_current_player().name,
+            "winner": self.winner,
+            "board": self.board.to_dict(),
+            "move_history": self.move_history
         }
-
-    def reset_game(self) -> None:
-        """Reset the game to initial state."""
-        self.board = [Player.EMPTY] * 9
-        self.current_player = Player.X
-        self.game_status = GameStatus.PLAYING
-        self.move_history = []
-
-    def get_winner(self) -> Optional[Player]:
+    
+    def undo_move(self) -> bool:
         """
-        Get the winner of the game if there is one.
+        Undo the last move made in the game.
         
         Returns:
-            Optional[Player]: The winning player or None if no winner
+            bool: True if a move was successfully undone, False otherwise
         """
-        if self.game_status == GameStatus.X_WINS:
-            return Player.X
-        elif self.game_status == GameStatus.O_WINS:
-            return Player.O
-        return None
-
-    def is_game_over(self) -> bool:
-        """
-        Check if the game has ended.
+        if not self.move_history:
+            return False
         
-        Returns:
-            bool: True if game is over, False otherwise
-        """
-        return self.game_status != GameStatus.PLAYING
-
-    def get_available_moves(self) -> List[int]:
-        """
-        Get list of available moves.
+        # Remove last move from history
+        last_move = self.move_history.pop()
+        row, col, symbol = last_move
         
-        Returns:
-            List[int]: List of available board positions (0-8)
-        """
-        return [i for i in range(9) if self.board[i] == Player.EMPTY]
+        # Clear the cell
+        self.board.set_cell(row, col, '')
+        
+        # Reset current player to the previous one
+        self.current_player_index = (self.current_player_index - 1) % len(self.players)
+        
+        return True
 
 
 def generate_html_template() -> str:
     """
-    Generate HTML template for the Tic Tac Toe game.
+    Generate the HTML template for the Tic Tac Toe game.
     
     Returns:
-        str: Complete HTML structure with embedded CSS and JavaScript
+        str: The complete HTML template with embedded CSS and JavaScript
     """
     return """<!DOCTYPE html>
 <html lang="en">
@@ -192,37 +347,32 @@ def generate_html_template() -> str:
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             padding: 20px;
         }
         
         .game-container {
-            background: white;
+            background-color: white;
             border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
             padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
             text-align: center;
-            max-width: 500px;
-            width: 100%;
         }
         
         h1 {
             color: #333;
             margin-bottom: 20px;
-            font-size: 2.5em;
         }
         
-        .status {
-            font-size: 1.4em;
-            font-weight: bold;
+        .game-info {
             margin-bottom: 20px;
-            padding: 10px;
-            border-radius: 8px;
-            background-color: #f0f0f0;
+            font-size: 18px;
+            font-weight: bold;
+            color: #555;
         }
         
-        .board {
+        .game-board {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 10px;
@@ -231,31 +381,31 @@ def generate_html_template() -> str:
         }
         
         .cell {
-            background: #f8f9fa;
-            border: 2px solid #dee2e6;
+            background-color: #f0f0f0;
+            border: 2px solid #333;
             border-radius: 8px;
-            font-size: 2.5em;
+            font-size: 40px;
             font-weight: bold;
             height: 100px;
+            width: 100px;
             display: flex;
             justify-content: center;
             align-items: center;
             cursor: pointer;
             transition: all 0.3s ease;
-            aspect-ratio: 1;
         }
         
         .cell:hover {
-            background: #e9ecef;
+            background-color: #e0e0e0;
             transform: scale(1.05);
         }
         
         .cell.x {
-            color: #dc3545;
+            color: #ff4757;
         }
         
         .cell.o {
-            color: #007bff;
+            color: #3742fa;
         }
         
         .controls {
@@ -263,22 +413,30 @@ def generate_html_template() -> str:
         }
         
         button {
-            background: #28a745;
+            background-color: #3742fa;
             color: white;
             border: none;
-            padding: 12px 25px;
-            font-size: 1.1em;
-            border-radius: 8px;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 5px;
             cursor: pointer;
-            transition: background 0.3s ease;
+            transition: background-color 0.3s ease;
             margin: 5px;
         }
         
         button:hover {
-            background: #218838;
+            background-color: #2a36d8;
+        }
+        
+        .message {
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            min-height: 30px;
         }
         
         .winning-cell {
+            background-color: #ffd93d;
             animation: pulse 1s infinite;
         }
         
@@ -288,226 +446,169 @@ def generate_html_template() -> str:
             100% { transform: scale(1); }
         }
         
-        .message {
-            font-size: 1.2em;
-            margin: 15px 0;
+        .game-history {
+            margin-top: 20px;
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
             padding: 10px;
-            border-radius: 8px;
-        }
-        
-        .win-message {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        
-        .draw-message {
-            background-color: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeaa7;
+            background-color: #f9f9f9;
         }
     </style>
 </head>
 <body>
     <div class="game-container">
         <h1>Tic Tac Toe</h1>
-        <div class="status" id="status">Player X's turn</div>
-        
-        <div class="board" id="board">
-            <div class="cell" data-position="0"></div>
-            <div class="cell" data-position="1"></div>
-            <div class="cell" data-position="2"></div>
-            <div class="cell" data-position="3"></div>
-            <div class="cell" data-position="4"></div>
-            <div class="cell" data-position="5"></div>
-            <div class="cell" data-position="6"></div>
-            <div class="cell" data-position="7"></div>
-            <div class="cell" data-position="8"></div>
-        </div>
-        
+        <div class="game-info" id="gameInfo">Current player: Player X</div>
+        <div class="game-board" id="gameBoard"></div>
+        <div class="message" id="message"></div>
         <div class="controls">
-            <button id="reset-btn">Reset Game</button>
+            <button onclick="resetGame()">Reset Game</button>
+            <button onclick="undoMove()">Undo Move</button>
         </div>
+        <div class="game-history" id="moveHistory"></div>
     </div>
 
     <script>
-        class TicTacToeGame {
-            constructor() {
-                this.board = Array(9).fill('');
-                this.currentPlayer = 'X';
-                this.gameStatus = 'playing';
-                this.winningCombinations = [
-                    [0, 1, 2], [3, 4, 5], [6, 7, 8],  // Rows
-                    [0, 3, 6], [1, 4, 7], [2, 5, 8],  // Columns
-                    [0, 4, 8], [2, 4, 6]              // Diagonals
-                ];
-                
-                this.init();
-            }
+        // Game state management
+        let gameState = {
+            board: [],
+            currentPlayer: 'X',
+            gameStatus: 'waiting',
+            winner: null,
+            moveHistory: []
+        };
+
+        // Initialize game
+        function initGame() {
+            updateBoard();
+            updateInfo();
+        }
+
+        // Update the game board display
+        function updateBoard() {
+            const boardElement = document.getElementById('gameBoard');
+            boardElement.innerHTML = '';
             
-            init() {
-                this.updateStatus();
-                this.setupEventListeners();
-            }
-            
-            setupEventListeners() {
-                const cells = document.querySelectorAll('.cell');
-                const resetButton = document.getElementById('reset-btn');
-                
-                cells.forEach(cell => {
-                    cell.addEventListener('click', () => {
-                        const position = parseInt(cell.dataset.position);
-                        this.makeMove(position);
-                    });
-                });
-                
-                resetButton.addEventListener('click', () => {
-                    this.resetGame();
-                });
-            }
-            
-            makeMove(position) {
-                if (this.gameStatus !== 'playing' || this.board[position] !== '') {
-                    return;
+            for (let row = 0; row < 3; row++) {
+                for (let col = 0; col < 3; col++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.id = `cell-${row}-${col}`;
+                    
+                    // Add content if it exists
+                    const value = gameState.board[row][col];
+                    if (value) {
+                        cell.textContent = value;
+                        cell.classList.add(value.toLowerCase());
+                    }
+                    
+                    // Add click event listener
+                    cell.addEventListener('click', () => handleCellClick(row, col));
+                    
+                    boardElement.appendChild(cell);
                 }
-                
-                this.board[position] = this.currentPlayer;
-                this.updateCell(position, this.currentPlayer);
-                
-                if (this.checkWin()) {
-                    this.gameStatus = this.currentPlayer === 'X' ? 'x_wins' : 'o_wins';
-                    this.showWinMessage();
-                } else if (this.isDraw()) {
-                    this.gameStatus = 'draw';
-                    this.showDrawMessage();
-                } else {
-                    this.currentPlayer = this.currentPlayer === 'X' ? 'O' : 'X';
-                    this.updateStatus();
-                }
-            }
-            
-            checkWin() {
-                return this.winningCombinations.some(combo => {
-                    const [a, b, c] = combo;
-                    return this.board[a] !== '' && 
-                           this.board[a] === this.board[b] === this.board[c];
-                });
-            }
-            
-            isDraw() {
-                return this.board.every(cell => cell !== '');
-            }
-            
-            updateCell(position, player) {
-                const cell = document.querySelector(`.cell[data-position="${position}"]`);
-                cell.textContent = player;
-                cell.classList.add(player.toLowerCase());
-            }
-            
-            updateStatus() {
-                const statusElement = document.getElementById('status');
-                if (this.gameStatus === 'playing') {
-                    statusElement.textContent = `Player ${this.currentPlayer}'s turn`;
-                }
-            }
-            
-            showWinMessage() {
-                const statusElement = document.getElementById('status');
-                statusElement.textContent = `Player ${this.currentPlayer} wins!`;
-                statusElement.classList.add('win-message');
-                
-                this.highlightWinningCells();
-            }
-            
-            highlightWinningCells() {
-                const winningCombo = this.winningCombinations.find(combo => {
-                    const [a, b, c] = combo;
-                    return this.board[a] !== '' && 
-                           this.board[a] === this.board[b] === this.board[c];
-                });
-                
-                if (winningCombo) {
-                    winningCombo.forEach(position => {
-                        const cell = document.querySelector(`.cell[data-position="${position}"]`);
-                        cell.classList.add('winning-cell');
-                    });
-                }
-            }
-            
-            showDrawMessage() {
-                const statusElement = document.getElementById('status');
-                statusElement.textContent = "It's a draw!";
-                statusElement.classList.add('draw-message');
-            }
-            
-            resetGame() {
-                this.board = Array(9).fill('');
-                this.currentPlayer = 'X';
-                this.gameStatus = 'playing';
-                
-                const cells = document.querySelectorAll('.cell');
-                cells.forEach(cell => {
-                    cell.textContent = '';
-                    cell.classList.remove('x', 'o', 'winning-cell');
-                });
-                
-                const statusElement = document.getElementById('status');
-                statusElement.textContent = "Player X's turn";
-                statusElement.classList.remove('win-message', 'draw-message');
             }
         }
-        
-        // Initialize game when DOM is loaded
-        document.addEventListener('DOMContentLoaded', () => {
-            new TicTacToeGame();
-        });
+
+        // Update game info display
+        function updateInfo() {
+            const gameInfo = document.getElementById('gameInfo');
+            const message = document.getElementById('message');
+            
+            if (gameState.gameStatus === 'won') {
+                gameInfo.textContent = `Game Over! Winner: ${gameState.winner}`;
+                message.textContent = `Player with symbol '${gameState.winner}' wins!`;
+            } else if (gameState.gameStatus === 'tied') {
+                gameInfo.textContent = 'Game Over! It\'s a tie!';
+                message.textContent = 'Game ended in a tie!';
+            } else {
+                gameInfo.textContent = `Current player: ${gameState.currentPlayer}`;
+                message.textContent = '';
+            }
+        }
+
+        // Handle cell click
+        function handleCellClick(row, col) {
+            const cell = document.getElementById(`cell-${row}-${col}`);
+            
+            // Prevent clicks if game is over or cell is occupied
+            if (gameState.gameStatus !== 'playing' || cell.textContent) {
+                return;
+            }
+            
+            // Make move via API call (simulated)
+            makeMove(row, col);
+        }
+
+        // Simulate making a move
+        function makeMove(row, col) {
+            // In a real implementation, this would call the Python backend
+            // For now we'll simulate the response
+            
+            const moveResult = {
+                success: true,
+                game_state: 'playing',
+                winner: null,
+                board: gameState.board.map(row => [...row]),
+                message: 'Move successful'
+            };
+            
+            // Update game state with result (simplified)
+            gameState.board[row][col] = gameState.currentPlayer;
+            gameState.gameStatus = moveResult.game_state;
+            gameState.winner = moveResult.winner;
+            
+            // Update UI
+            updateBoard();
+            updateInfo();
+            
+            // Switch player if game continues
+            if (gameState.gameStatus === 'playing') {
+                gameState.currentPlayer = gameState.currentPlayer === 'X' ? 'O' : 'X';
+            }
+        }
+
+        // Reset game
+        function resetGame() {
+            // In a real implementation, this would call the Python backend
+            gameState.board = [['', '', ''], ['', '', ''], ['', '', '']];
+            gameState.currentPlayer = 'X';
+            gameState.gameStatus = 'waiting';
+            gameState.winner = null;
+            gameState.moveHistory = [];
+            
+            updateBoard();
+            updateInfo();
+        }
+
+        // Undo last move
+        function undoMove() {
+            // In a real implementation, this would call the Python backend
+            alert('Undo functionality would be implemented in the Python backend');
+        }
+
+        // Initialize the game when page loads
+        window.onload = initGame;
     </script>
 </body>
 </html>"""
 
 
-def create_tic_tac_toe_html_file(filename: str = "tic_tac_toe.html") -> None:
+def main():
     """
-    Create a complete HTML file with Tic Tac Toe game.
+    Main function to demonstrate the Tic Tac Toe game engine.
     
-    Args:
-        filename: The name of the output HTML file (default: "tic_tac_toe.html")
+    This function shows how to use the implemented classes and 
+    demonstrates basic game flow.
     """
     try:
-        with open(filename, 'w', encoding='utf-8') as file:
-            file.write(generate_html_template())
-        print(f"Successfully created {filename}")
-    except IOError as e:
-        print(f"Error creating HTML file: {e}")
-
-
-def main() -> None:
-    """Main function to demonstrate usage."""
-    print("Creating Tic Tac Toe HTML file...")
-    
-    # Create the game instance
-    game = TicTacToeGame()
-    
-    # Display initial state
-    print("Initial game state:")
-    print(json.dumps(game.get_game_state(), indent=2))
-    
-    # Make some moves
-    try:
-        game.make_move(0)  # X at position 0
-        game.make_move(1)  # O at position 1
-        game.make_move(4)  # X at position 4
-        game.make_move(3)  # O at position 3
+        # Create a new game instance
+        game = GameEngine()
         
-        print("\nGame state after moves:")
+        print("Tic Tac Toe Game Started!")
+        print("Initial game state:")
         print(json.dumps(game.get_game_state(), indent=2))
         
-        # Create HTML file
-        create_tic_tac_toe_html_file("tic_tac_toe.html")
-        
-    except ValueError as e:
-        print(f"Error making move: {e}")
-
-
-if __name__ == "__main__":
-    main()
+        # Make a few moves to demonstrate functionality
+        print("\nMaking moves...")
