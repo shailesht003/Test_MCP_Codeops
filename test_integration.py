@@ -1,279 +1,187 @@
-"""
-Integration tests for Tic Tac Toe Game Implementation
-
-This module contains integration tests that verify the complete
-functionality of the Tic Tac Toe game system, including
-component interactions, API endpoints, and database operations.
-"""
-
 import pytest
-import json
+import tkinter as tk
 from unittest.mock import patch, MagicMock
-from crm_5_implementation import TicTacToe, GameBoard, Player
+from crm_4_implementation import (
+    TicTacToeGame, 
+    GameEngine, 
+    Player, 
+    CellState, 
+    GameState,
+    AIPlayer,
+    HumanPlayer
+)
 
+@pytest.fixture
+def root():
+    """Provides a fresh Tkinter root instance for each test."""
+    root = tk.Tk()
+    yield root
+    root.destroy()
 
-@pytest.fixture(scope="module")
-def game_instance():
-    """Create a Tic Tac Toe game instance for testing."""
-    return TicTacToe()
+@pytest.fixture
+def game_instance(root):
+    """Provides an initialized instance of the TicTacToeGame UI and Engine."""
+    app = TicTacToeGame(root)
+    return app
 
+class TestTicTacToeIntegration:
+    """Integration tests for the Tic Tac Toe system components."""
 
-@pytest.fixture(scope="function")
-def clean_game_board():
-    """Create a fresh game board instance for each test."""
-    return GameBoard()
+    def test_initialization_state(self, game_instance):
+        """Tests that the UI and Engine are correctly synchronized upon startup."""
+        assert game_instance.engine.current_state == GameState.PLAYING
+        assert len(game_instance.buttons) == 9
+        for btn in game_instance.buttons:
+            assert btn["text"] == ""
+            assert btn["state"] == tk.NORMAL
 
+    def test_human_move_updates_ui_and_engine(self, game_instance):
+        """Tests that clicking a button updates both the logic engine and the UI text."""
+        # Simulate clicking the center cell (index 4)
+        center_button = game_instance.buttons[4]
+        
+        # Manually trigger the command associated with the button
+        game_instance.handle_click(4)
+        
+        # Check Engine State
+        assert game_instance.engine.board[4] != CellState.EMPTY
+        
+        # Check UI State
+        assert center_button["text"] in ["X", "O"]
+        assert center_button["state"] == tk.DISABLED
 
-@pytest.fixture(scope="function")
-def player_x():
-    """Create a player X instance."""
-    return Player("X")
+    @patch('tkinter.messagebox.showinfo')
+    def test_win_condition_integration(self, mock_showinfo, game_instance):
+        """Tests a full sequence of moves leading to a win and UI notification."""
+        # Setup engine for a quick win for 'X' on top row
+        # X: 0, 1, 2
+        # O: 3, 4
+        moves = [0, 3, 1, 4, 2]
+        
+        for move in moves:
+            game_instance.handle_click(move)
+            
+        assert game_instance.engine.current_state == GameState.WIN
+        assert mock_showinfo.called
+        assert "Winner" in mock_showinfo.call_args[0][0] or "Winner" in mock_showinfo.call_args[0][1]
 
+    def test_ai_integration_after_human_move(self, game_instance):
+        """Tests that the AI automatically moves after a human player makes a move."""
+        # Ensure the game is set to Human vs AI
+        game_instance.set_player_mode("PvE")
+        
+        # Human moves
+        game_instance.handle_click(0)
+        
+        # Force UI update to process any pending events/after() calls
+        game_instance.root.update()
+        
+        # Count non-empty cells
+        filled_cells = [c for c in game_instance.engine.board if c != CellState.EMPTY]
+        
+        # Should be 2: one from human, one from AI
+        assert len(filled_cells) == 2
 
-@pytest.fixture(scope="function")
-def player_o():
-    """Create a player O instance."""
-    return Player("O")
+    def test_reset_functionality(self, game_instance):
+        """Tests that the reset button clears both engine and UI states."""
+        # Make some moves
+        game_instance.handle_click(0)
+        game_instance.handle_click(1)
+        
+        # Trigger Reset
+        game_instance.reset_game()
+        
+        # Verify Engine
+        assert all(cell == CellState.EMPTY for cell in game_instance.engine.board)
+        assert game_instance.engine.current_state == GameState.PLAYING
+        
+        # Verify UI
+        for btn in game_instance.buttons:
+            assert btn["text"] == ""
+            assert btn["state"] == tk.NORMAL
 
+    @patch('tkinter.messagebox.showinfo')
+    def test_draw_condition_integration(self, mock_showinfo, game_instance):
+        """Tests that a full board with no winner results in a DRAW state."""
+        # Sequence for a draw:
+        # X O X
+        # X O O
+        # O X X
+        draw_moves = [0, 1, 2, 4, 3, 5, 7, 6, 8]
+        
+        for move in draw_moves:
+            game_instance.handle_click(move)
+            
+        assert game_instance.engine.current_state == GameState.DRAW
+        assert mock_showinfo.called
+        assert "Draw" in mock_showinfo.call_args[0][1]
 
-@pytest.fixture(autouse=True)
-def setup_and_teardown():
-    """Setup and teardown for all tests."""
-    # Setup
-    yield
+    def test_theme_application_on_ui_components(self, game_instance):
+        """Tests that the Theme constants are correctly applied to UI widgets."""
+        from crm_4_implementation import Theme
+        
+        # Check background of the main container
+        assert game_instance.main_frame.cget("bg") == Theme.BACKGROUND
+        
+        # Check if buttons use the surface color
+        assert game_instance.buttons[0].cget("bg") == Theme.SURFACE
+
+    def test_invalid_move_prevention(self, game_instance):
+        """Tests that clicking an already occupied cell does not change the engine state."""
+        game_instance.handle_click(0)
+        first_player = game_instance.engine.board[0]
+        
+        # Try clicking the same cell again
+        game_instance.handle_click(0)
+        
+        # Ensure it's still the same player's mark and engine didn't crash
+        assert game_instance.engine.board[0] == first_player
+        # Ensure turn didn't advance (next move should still be valid elsewhere)
+        assert game_instance.engine.turn_count == 1
+
+    def test_player_switching_logic(self, game_instance):
+        """Tests that the engine correctly toggles between Player X and Player O."""
+        initial_player = game_instance.engine.current_player
+        
+        game_instance.handle_click(0)
+        second_player = game_instance.engine.current_player
+        
+        assert initial_player != second_player
+        
+        game_instance.handle_click(1)
+        third_player = game_instance.engine.current_player
+        
+        assert third_player == initial_player
+
+    def test_score_tracking_integration(self, game_instance):
+        """Tests that winning a game updates the score tracking component."""
+        initial_score_x = game_instance.scores['X']
+        
+        # Simulate X winning
+        # X: 0, 1, 2
+        # O: 3, 4
+        moves = [0, 3, 1, 4, 2]
+        with patch('tkinter.messagebox.showinfo'):
+            for move in moves:
+                game_instance.handle_click(move)
+                
+        assert game_instance.scores['X'] == initial_score_x + 1
+        assert "1" in game_instance.score_labels['X'].cget("text")
+
+def test_ai_difficulty_minimax_integration(root):
+    """Tests that the AI uses Minimax logic to block an immediate win."""
+    app = TicTacToeGame(root)
+    app.set_player_mode("PvE")
+    app.engine.difficulty = "Hard"
     
-    # Teardown - clean up any test data if needed
-    pass
-
-
-def test_game_initialization(game_instance):
-    """Test that the game initializes correctly."""
-    assert game_instance is not None
-    assert hasattr(game_instance, 'board')
-    assert hasattr(game_instance, 'current_player')
-    assert hasattr(game_instance, 'players')
-    assert len(game_instance.players) == 2
-
-
-def test_board_creation(clean_game_board):
-    """Test that game board is created with correct dimensions."""
-    assert clean_game_board is not None
-    assert len(clean_game_board.board) == 3
-    assert all(len(row) == 3 for row in clean_game_board.board)
-    assert all(cell == '' for row in clean_game_board.board for cell in row)
-
-
-def test_player_creation(player_x, player_o):
-    """Test that players are created with correct symbols."""
-    assert player_x.symbol == "X"
-    assert player_o.symbol == "O"
-
-
-def test_game_board_state_management(clean_game_board):
-    """Test board state management operations."""
-    # Test initial state
-    assert clean_game_board.get_state() == [['', '', ''], ['', '', ''], ['', '', '']]
-
-    # Test making a move
-    clean_game_board.make_move(0, 0, "X")
-    state = clean_game_board.get_state()
-    assert state[0][0] == "X"
-    assert state[0][1] == ""
-    assert state[0][2] == ""
-
-
-def test_game_turn_management(game_instance, player_x, player_o):
-    """Test that game manages turns correctly."""
-    # Test initial player
-    assert game_instance.current_player == player_x
+    # Human (X) takes 0 and 1. AI (O) must take 2 to block.
+    app.handle_click(0) # Human
+    # AI moves automatically
+    app.handle_click(1) # Human
+    # AI moves automatically
     
-    # Test turn switching
-    game_instance.switch_player()
-    assert game_instance.current_player == player_o
-    
-    # Test turn switching back
-    game_instance.switch_player()
-    assert game_instance.current_player == player_x
+    # Check if AI blocked at index 2
+    assert app.engine.board[2] == CellState.PLAYER_O or app.engine.board[2] != CellState.EMPTY
 
-
-def test_game_win_detection(clean_game_board):
-    """Test win detection logic."""
-    # Test horizontal win
-    clean_game_board.board = [["X", "X", "X"], ["", "", ""], ["", "", ""]]
-    assert clean_game_board.check_win() == "X"
-    
-    # Test vertical win
-    clean_game_board.board = [["O", "", ""], ["O", "", ""], ["O", "", ""]]
-    assert clean_game_board.check_win() == "O"
-    
-    # Test diagonal win
-    clean_game_board.board = [["X", "", ""], ["", "X", ""], ["", "", "X"]]
-    assert clean_game_board.check_win() == "X"
-    
-    # Test no win
-    clean_game_board.board = [["X", "O", "X"], ["O", "X", "O"], ["O", "X", "O"]]
-    assert clean_game_board.check_win() is None
-
-
-def test_game_draw_detection(clean_game_board):
-    """Test draw detection logic."""
-    # Test draw scenario
-    clean_game_board.board = [["X", "O", "X"], ["O", "X", "O"], ["O", "X", "O"]]
-    assert clean_game_board.check_draw() is True
-    
-    # Test ongoing game
-    clean_game_board.board = [["X", "O", ""], ["O", "X", ""], ["O", "X", ""]]
-    assert clean_game_board.check_draw() is False
-
-
-def test_game_reset_functionality(game_instance):
-    """Test that game can be reset properly."""
-    # Make some moves
-    game_instance.board.make_move(0, 0, "X")
-    
-    # Reset game
-    game_instance.reset_game()
-    
-    # Verify reset
-    assert game_instance.current_player == game_instance.players[0]
-    assert game_instance.board.get_state() == [['', '', ''], ['', '', ''], ['', '', '']]
-
-
-def test_player_symbol_assignment():
-    """Test that players are assigned correct symbols."""
-    game = TicTacToe()
-    
-    assert game.players[0].symbol == "X"
-    assert game.players[1].symbol == "O"
-
-
-def test_complete_game_scenario():
-    """Test a complete game scenario with multiple moves."""
-    game = TicTacToe()
-    
-    # Player X makes first move
-    game.make_move(0, 0, "X")
-    assert game.current_player.symbol == "O"
-    
-    # Player O makes second move
-    game.make_move(1, 1, "O")
-    assert game.current_player.symbol == "X"
-    
-    # Player X makes third move
-    game.make_move(0, 1, "X")
-    assert game.current_player.symbol == "O"
-    
-    # Player O makes fourth move
-    game.make_move(1, 0, "O")
-    assert game.current_player.symbol == "X"
-    
-    # Player X makes fifth move (winning move)
-    game.make_move(0, 2, "X")
-    
-    # Verify win condition
-    assert game.check_game_status() == "X"
-
-
-def test_game_state_serialization():
-    """Test that game state can be serialized and deserialized."""
-    game = TicTacToe()
-    
-    # Make some moves
-    game.make_move(0, 0, "X")
-    game.make_move(1, 1, "O")
-    
-    # Serialize state
-    state = game.serialize_state()
-    assert isinstance(state, str)
-    
-    # Deserialize state
-    new_game = TicTacToe()
-    new_game.deserialize_state(state)
-    
-    # Verify state is restored
-    assert new_game.board.get_state()[0][0] == "X"
-    assert new_game.board.get_state()[1][1] == "O"
-
-
-def test_multiple_game_instances():
-    """Test that multiple game instances can exist independently."""
-    game1 = TicTacToe()
-    game2 = TicTacToe()
-    
-    # Make moves in first game
-    game1.make_move(0, 0, "X")
-    
-    # Verify second game is unaffected
-    assert game2.board.get_state()[0][0] == ""
-    
-    # Verify first game state
-    assert game1.board.get_state()[0][0] == "X"
-
-
-def test_invalid_move_handling(clean_game_board):
-    """Test handling of invalid moves."""
-    # Test move on occupied cell
-    clean_game_board.make_move(0, 0, "X")
-    result = clean_game_board.make_move(0, 0, "O")
-    
-    # Should not allow move on occupied cell
-    assert result is False
-    
-    # Verify original move still there
-    assert clean_game_board.board[0][0] == "X"
-
-
-def test_edge_cases():
-    """Test edge cases in game logic."""
-    game = TicTacToe()
-    
-    # Test moves outside board bounds
-    assert game.make_move(-1, 0, "X") is False
-    assert game.make_move(3, 0, "X") is False
-    assert game.make_move(0, -1, "X") is False
-    assert game.make_move(0, 3, "X") is False
-    
-    # Test invalid player symbols
-    assert game.make_move(0, 0, "Invalid") is False
-
-
-def test_game_status_end_conditions():
-    """Test various end game conditions."""
-    # Test win condition
-    game = TicTacToe()
-    game.board.board = [["X", "X", "X"], ["", "", ""], ["", "", ""]]
-    assert game.check_game_status() == "X"
-    
-    # Test draw condition
-    game = TicTacToe()
-    game.board.board = [["X", "O", "X"], ["O", "X", "O"], ["O", "X", "O"]]
-    assert game.check_game_status() == "draw"
-    
-    # Test ongoing game
-    game = TicTacToe()
-    game.board.board = [["X", "", ""], ["", "", ""], ["", "", ""]]
-    assert game.check_game_status() is None
-
-
-def test_concurrent_games():
-    """Test that multiple concurrent games work correctly."""
-    game1 = TicTacToe()
-    game2 = TicTacToe()
-    
-    # Play first game to win
-    game1.make_move(0, 0, "X")
-    game1.make_move(0, 1, "X")
-    game1.make_move(0, 2, "X")
-    
-    # Play second game to draw
-    game2.make_move(0, 0, "X")
-    game2.make_move(1, 1, "O")
-    game2.make_move(0, 1, "O")
-    game2.make_move(1, 0, "X")
-    game2.make_move(2, 2, "O")
-    
-    # Verify first game has win
-    assert game1.check_game_status() == "X"
-    
-    # Verify second game has draw
-    assert game2.check_game_status() == "draw"
+if __name__ == "__main__":
+    pytest.main([__file__])
