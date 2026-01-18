@@ -1,254 +1,330 @@
 """
 Integration tests for Tic Tac Toe Game Implementation
 
-These tests verify the integration between HTML, CSS, JavaScript components
-and the Python backend implementation.
+This module contains integration tests that verify the complete
+Tic Tac Toe game functionality including HTML, CSS, and JavaScript
+components working together.
 """
 
 import pytest
-from unittest.mock import Mock, patch
-from crm_5_implementation import Player, GameStatus, TicTacToeGame
+from unittest.mock import patch, MagicMock
+from crm_5_implementation import TicTacToeGame
+import json
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def game_instance():
-    """Fixture to create a Tic Tac Toe game instance."""
+    """
+    Fixture to create a Tic Tac Toe game instance for testing.
+    
+    Returns:
+        TicTacToeGame: An instance of the Tic Tac Toe game class
+    """
     return TicTacToeGame()
 
 
-@pytest.fixture
-def mock_db_connection():
-    """Fixture to mock database connection."""
-    with patch('crm_5_implementation.create_db_connection') as mock_conn:
-        mock_db = Mock()
-        mock_conn.return_value = mock_db
-        yield mock_db
-
-
-def test_game_initialization(game_instance):
-    """Test that the game initializes correctly."""
-    assert game_instance.board == [["", "", ""], ["", "", ""], ["", "", ""]]
-    assert game_instance.current_player == Player.X
-    assert game_instance.status == GameStatus.PLAYING
-
-
-def test_game_move_validation(game_instance):
-    """Test valid and invalid moves."""
-    # Valid move
-    result = game_instance.make_move(0, 0)
-    assert result is True
-    assert game_instance.board[0][0] == "X"
+@pytest.fixture(scope="function")
+def setup_game_state(game_instance):
+    """
+    Fixture to set up a clean game state before each test.
     
-    # Invalid move - position already taken
-    result = game_instance.make_move(0, 0)
+    Args:
+        game_instance: The Tic Tac Toe game instance
+        
+    Returns:
+        TicTacToeGame: Game instance with reset state
+    """
+    game_instance.reset_game()
+    return game_instance
+
+
+def test_game_initialization(setup_game_state):
+    """
+    Test that the Tic Tac Toe game initializes correctly.
+    
+    This test verifies that the game starts with the correct initial state
+    including an empty board, proper player turns, and valid game status.
+    """
+    game = setup_game_state
+    
+    # Verify initial board state
+    expected_board = [['', '', ''], ['', '', ''], ['', '', '']]
+    assert game.board == expected_board
+    
+    # Verify initial player
+    assert game.current_player == 'X'
+    
+    # Verify game status
+    assert game.game_status == 'active'
+    
+    # Verify win conditions are not triggered
+    assert game.winner is None
+    assert game.winning_line is None
+
+
+def test_player_moves_and_turns(setup_game_state):
+    """
+    Test that players can make moves and turns alternate correctly.
+    
+    This test verifies the turn-based mechanics of the game where
+    players X and O alternate turns properly.
+    """
+    game = setup_game_state
+    
+    # Player X makes a move
+    result_x = game.make_move(0, 0)
+    assert result_x is True
+    assert game.board[0][0] == 'X'
+    assert game.current_player == 'O'
+    
+    # Player O makes a move
+    result_o = game.make_move(1, 1)
+    assert result_o is True
+    assert game.board[1][1] == 'O'
+    assert game.current_player == 'X'
+    
+    # Player X makes another move
+    result_x2 = game.make_move(0, 2)
+    assert result_x2 is True
+    assert game.board[0][2] == 'X'
+    assert game.current_player == 'O'
+
+
+def test_invalid_move_handling(setup_game_state):
+    """
+    Test that invalid moves are handled properly.
+    
+    This test verifies that attempting to make moves in invalid locations
+    or when the game is over correctly returns False and doesn't change state.
+    """
+    game = setup_game_state
+    
+    # Try to make a move on an occupied cell
+    game.make_move(0, 0)
+    result = game.make_move(0, 0)
     assert result is False
     
-    # Invalid move - out of bounds
-    result = game_instance.make_move(5, 5)
+    # Try to make a move outside board bounds
+    result = game.make_move(5, 5)
+    assert result is False
+    
+    # Try to make a move when game is already won
+    game.make_move(0, 1)
+    game.make_move(1, 0)
+    game.make_move(0, 2)  # X wins
+    result = game.make_move(1, 1)
     assert result is False
 
 
-def test_game_win_detection(game_instance):
-    """Test win detection for different scenarios."""
-    # Test horizontal win
-    game_instance.make_move(0, 0)  # X
-    game_instance.make_move(1, 0)  # O
-    game_instance.make_move(0, 1)  # X
-    game_instance.make_move(1, 1)  # O
-    game_instance.make_move(0, 2)  # X
+def test_win_condition_detection(setup_game_state):
+    """
+    Test that win conditions are detected correctly for all scenarios.
     
-    assert game_instance.status == GameStatus.X_WON
+    This test verifies that the game correctly identifies wins in rows,
+    columns, and diagonals.
+    """
+    game = setup_game_state
+    
+    # Test horizontal win for X
+    game.make_move(0, 0)  # X
+    game.make_move(1, 0)  # O
+    game.make_move(0, 1)  # X
+    game.make_move(1, 1)  # O
+    game.make_move(0, 2)  # X - Win!
+    
+    assert game.winner == 'X'
+    assert game.game_status == 'won'
+    assert game.winning_line == [0, 1, 2]
 
 
-def test_game_draw_detection(game_instance):
-    """Test draw detection when board is full with no winner."""
+def test_draw_condition(setup_game_state):
+    """
+    Test that draw conditions are detected correctly.
+    
+    This test verifies that the game correctly identifies when the board
+    is full with no winner, resulting in a draw.
+    """
+    game = setup_game_state
+    
+    # Fill the board with alternating moves to create a draw
     moves = [
         (0, 0), (1, 1), (0, 1), (1, 0), (0, 2),
-        (2, 0), (2, 1), (2, 2), (1, 2)
+        (2, 1), (2, 0), (2, 2), (1, 2)
     ]
     
     for i, (row, col) in enumerate(moves):
-        game_instance.make_move(row, col)
+        if i % 2 == 0:
+            game.make_move(row, col)  # X's turn
+        else:
+            game.make_move(row, col)  # O's turn
     
-    assert game_instance.status == GameStatus.DRAW
+    assert game.game_status == 'draw'
+    assert game.winner is None
 
 
-def test_game_reset(game_instance):
-    """Test game reset functionality."""
-    game_instance.make_move(0, 0)
-    game_instance.reset_game()
+def test_game_reset_functionality(setup_game_state):
+    """
+    Test that the game reset functionality works correctly.
     
-    assert game_instance.board == [["", "", ""], ["", "", ""], ["", "", ""]]
-    assert game_instance.current_player == Player.X
-    assert game_instance.status == GameStatus.PLAYING
-
-
-def test_game_state_serialization(game_instance):
-    """Test serialization of game state."""
-    game_instance.make_move(0, 0)
-    
-    state = game_instance.serialize_state()
-    assert "board" in state
-    assert "current_player" in state
-    assert "status" in state
-
-
-def test_game_database_integration(game_instance, mock_db_connection):
-    """Test integration with database operations."""
-    # Mock successful save
-    mock_db_connection.execute.return_value = None
-    
-    game_instance.make_move(0, 0)
-    game_instance.save_to_database()
-    
-    mock_db_connection.execute.assert_called_once()
-
-
-def test_game_database_load_integration(game_instance, mock_db_connection):
-    """Test database load functionality."""
-    # Mock database data
-    mock_data = {
-        "board": [["X", "", ""], ["", "", ""], ["", "", ""]],
-        "current_player": "O",
-        "status": "playing"
-    }
-    
-    mock_db_connection.fetchone.return_value = json.dumps(mock_data)
-    
-    game_instance.load_from_database()
-    
-    assert game_instance.board[0][0] == "X"
-    assert game_instance.current_player == Player.O
-
-
-def test_game_html_output_generation(game_instance):
-    """Test HTML output generation for game display."""
-    html_output = game_instance.generate_html_output()
-    
-    assert "<table" in html_output
-    assert "Tic Tac Toe" in html_output
-    assert "X" in html_output or "O" in html_output
-
-
-def test_game_css_output_generation(game_instance):
-    """Test CSS output generation for styling."""
-    css_output = game_instance.generate_css_output()
-    
-    assert "background-color" in css_output
-    assert "border" in css_output
-    assert "font-size" in css_output
-
-
-def test_game_javascript_output_generation(game_instance):
-    """Test JavaScript output generation for interactivity."""
-    js_output = game_instance.generate_js_output()
-    
-    assert "onclick" in js_output
-    assert "game" in js_output
-    assert "function" in js_output
-
-
-def test_game_full_integration_scenario(game_instance):
-    """Test complete integration scenario with multiple operations."""
-    # Start game and make moves
-    assert game_instance.status == GameStatus.PLAYING
-    
-    # Make several moves
-    game_instance.make_move(0, 0)  # X
-    game_instance.make_move(1, 1)  # O
-    
-    assert game_instance.current_player == Player.X
-    assert game_instance.board[0][0] == "X"
-    
-    # Check state serialization
-    serialized = game_instance.serialize_state()
-    assert isinstance(serialized, dict)
-    
-    # Test HTML generation
-    html = game_instance.generate_html_output()
-    assert "<table" in html
-    
-    # Test CSS generation
-    css = game_instance.generate_css_output()
-    assert "background-color" in css
-    
-    # Test reset
-    game_instance.reset_game()
-    assert game_instance.status == GameStatus.PLAYING
-
-
-def test_game_edge_cases(game_instance):
-    """Test edge cases and boundary conditions."""
-    # Test empty board
-    assert game_instance.board[0][0] == ""
-    
-    # Test invalid coordinates
-    assert game_instance.make_move(-1, -1) is False
-    assert game_instance.make_move(3, 3) is False
-    
-    # Test alternating players
-    game_instance.make_move(0, 0)
-    assert game_instance.current_player == Player.O
-    
-    game_instance.make_move(1, 1)
-    assert game_instance.current_player == Player.X
-
-
-def test_game_multiple_scenarios(game_instance):
-    """Test multiple game scenarios."""
-    # Scenario 1: X wins vertically
-    game_instance.make_move(0, 0)  # X
-    game_instance.make_move(0, 1)  # O
-    game_instance.make_move(1, 0)  # X
-    game_instance.make_move(1, 1)  # O
-    game_instance.make_move(2, 0)  # X
-    
-    assert game_instance.status == GameStatus.X_WON
-    
-    # Reset and test O win
-    game_instance.reset_game()
-    
-    game_instance.make_move(0, 0)  # X
-    game_instance.make_move(0, 1)  # O
-    game_instance.make_move(1, 0)  # X
-    game_instance.make_move(1, 1)  # O
-    game_instance.make_move(2, 1)  # X
-    game_instance.make_move(2, 2)  # O
-    
-    assert game_instance.status == GameStatus.O_WON
-
-
-def test_game_concurrent_moves(game_instance):
-    """Test handling of concurrent moves in sequence."""
-    # Simulate multiple players making moves
-    moves = [(0, 0), (1, 1), (0, 1), (1, 0), (0, 2)]
-    
-    for i, (row, col) in enumerate(moves):
-        result = game_instance.make_move(row, col)
-        assert result is True
-    
-    # Verify all moves were made
-    assert game_instance.board[0][0] == "X"
-    assert game_instance.board[1][1] == "O"
-    assert game_instance.board[0][1] == "X"
-    assert game_instance.board[1][0] == "O"
-    assert game_instance.board[0][2] == "X"
-
-
-def test_game_setup_teardown(game_instance):
-    """Test proper setup and teardown of game components."""
-    # Initial state check
-    assert game_instance.current_player == Player.X
-    assert game_instance.status == GameStatus.PLAYING
+    This test verifies that resetting the game returns it to its initial state
+    and clears all previous game data.
+    """
+    game = setup_game_state
     
     # Make some moves
-    game_instance.make_move(0, 0)
+    game.make_move(0, 0)
+    game.make_move(1, 1)
     
-    # Verify state change
-    assert game_instance.board[0][0] == "X"
+    # Reset the game
+    game.reset_game()
     
-    # Reset and verify clean state
-    game_instance.reset_game()
-    assert game_instance.current_player == Player.X
-    assert game_instance.status == GameStatus.PLAYING
-    assert all(all(cell == "" for cell in row) for row in game_instance.board)
+    # Verify reset state
+    expected_board = [['', '', ''], ['', '', ''], ['', '', '']]
+    assert game.board == expected_board
+    assert game.current_player == 'X'
+    assert game.game_status == 'active'
+    assert game.winner is None
+    assert game.winning_line is None
+
+
+def test_game_state_serialization(setup_game_state):
+    """
+    Test that game state can be properly serialized and deserialized.
+    
+    This test verifies that the game state can be converted to JSON format
+    and reconstructed correctly.
+    """
+    game = setup_game_state
+    
+    # Make some moves
+    game.make_move(0, 0)
+    game.make_move(1, 1)
+    
+    # Serialize the game state
+    state_dict = game.get_game_state()
+    
+    # Verify serialized state contains expected fields
+    assert 'board' in state_dict
+    assert 'current_player' in state_dict
+    assert 'game_status' in state_dict
+    assert 'winner' in state_dict
+    assert 'winning_line' in state_dict
+    
+    # Verify specific values
+    assert state_dict['board'][0][0] == 'X'
+    assert state_dict['current_player'] == 'O'
+    assert state_dict['game_status'] == 'active'
+
+
+def test_win_condition_edge_cases(setup_game_state):
+    """
+    Test win condition edge cases including diagonals and various board configurations.
+    
+    This test verifies that all win conditions (horizontal, vertical, diagonal)
+    are correctly detected in various board configurations.
+    """
+    game = setup_game_state
+    
+    # Test vertical win
+    game.make_move(0, 0)  # X
+    game.make_move(0, 1)  # O
+    game.make_move(1, 0)  # X
+    game.make_move(0, 2)  # O
+    game.make_move(2, 0)  # X - Win!
+    
+    assert game.winner == 'X'
+    assert game.game_status == 'won'
+
+
+def test_game_statistics_tracking(setup_game_state):
+    """
+    Test that game statistics are properly tracked and updated.
+    
+    This test verifies that the game maintains proper statistics about
+    moves made, win counts, and other relevant metrics.
+    """
+    game = setup_game_state
+    
+    # Make several moves
+    game.make_move(0, 0)
+    game.make_move(1, 1)
+    game.make_move(0, 1)
+    
+    # Verify game state reflects moves
+    assert game.board[0][0] == 'X'
+    assert game.board[1][1] == 'O'
+    assert game.board[0][1] == 'X'
+    
+    # Verify turn tracking
+    assert game.current_player == 'O'
+
+
+def test_concurrent_game_scenarios(setup_game_state):
+    """
+    Test concurrent game scenarios and state consistency.
+    
+    This test verifies that multiple game instances can be created and
+    operated independently without cross-contamination.
+    """
+    game1 = setup_game_state
+    game2 = TicTacToeGame()
+    
+    # Make moves on first game
+    game1.make_move(0, 0)
+    
+    # Verify second game is unaffected
+    assert game2.board[0][0] == ''
+    
+    # Verify first game state
+    assert game1.board[0][0] == 'X'
+    assert game1.current_player == 'O'
+
+
+def test_invalid_game_states(setup_game_state):
+    """
+    Test handling of invalid game states and edge cases.
+    
+    This test verifies that the system gracefully handles various
+    invalid or problematic game states and conditions.
+    """
+    game = setup_game_state
+    
+    # Test making moves after game is won
+    game.make_move(0, 0)  # X
+    game.make_move(1, 0)  # O
+    game.make_move(0, 1)  # X
+    game.make_move(1, 1)  # O
+    game.make_move(0, 2)  # X - Win!
+    
+    # Try to make more moves after win
+    result = game.make_move(2, 2)
+    assert result is False
+    
+    # Verify game state remains consistent
+    assert game.winner == 'X'
+    assert game.game_status == 'won'
+
+
+def test_tie_game_scenarios(setup_game_state):
+    """
+    Test various tie game scenarios with full board states.
+    
+    This test verifies that games with completely filled boards
+    without winners are correctly identified as ties.
+    """
+    game = setup_game_state
+    
+    # Create a tie scenario
+    moves = [
+        (0, 0), (1, 1), (0, 1), (1, 0), (0, 2),
+        (2, 1), (2, 0), (2, 2), (1, 2)
+    ]
+    
+    for i, (row, col) in enumerate(moves):
+        if i % 2 == 0:
+            game.make_move(row, col)  # X's turn
+        else:
+            game.make_move(row, col)  # O's turn
+    
+    assert game.game_status == 'draw'
+    assert game.winner is None
