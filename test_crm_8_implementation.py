@@ -1,224 +1,149 @@
 import pytest
-from unittest.mock import patch, MagicMock
-from io import StringIO
-import sys
-from crm_8_implementation import (
-    ColorTheme,
-    GameStatus,
-    StandardWinStrategy,
-    GameBoardUI,
-    GameLogicController
-)
+from crm_8_implementation import ConfigManager, Game
 
-@pytest.fixture
-def theme():
-    """Fixture for ColorTheme instance."""
-    return ColorTheme()
+def test_config_manager_singleton():
+    """Test that ConfigManager is a singleton."""
+    config1 = ConfigManager()
+    config2 = ConfigManager()
+    assert config1 is config2, "ConfigManager should be a singleton"
 
-@pytest.fixture
-def win_strategy():
-    """Fixture for StandardWinStrategy instance."""
-    return StandardWinStrategy()
+def test_config_manager_default_theme():
+    """Test that ConfigManager initializes with the correct default theme."""
+    config = ConfigManager()
+    expected_theme = {
+        'board_bg': '#e0e0e0',
+        'cell_border': '#b0b0b0',
+        'x_color': '#555555',
+        'o_color': '#555555',
+        'text_color': '#333333'
+    }
+    assert config.get_theme() == expected_theme, "Theme configuration is incorrect"
 
-@pytest.fixture
-def game_controller(win_strategy, theme):
-    """Fixture for GameLogicController instance."""
-    return GameLogicController(win_strategy, theme)
+def test_game_initial_state():
+    """Test that Game initializes with an empty board and correct state."""
+    game = Game()
+    assert game.board == [['' for _ in range(3)] for _ in range(3)], "Board should be empty"
+    assert game.current_player == 'X', "Current player should be X"
+    assert game.winner is None, "Winner should be None"
+    assert game.game_over is False, "Game should not be over"
+    assert game.config == ConfigManager().get_theme(), "Theme should match ConfigManager"
 
-class TestColorTheme:
-    def test_theme_constants(self, theme):
-        """Verify that the theme constants are correctly defined for CRM-8."""
-        assert theme.PRIMARY_COLOR == "Green"
-        assert theme.X_COLOR == "\033[92m"
-        assert theme.O_COLOR == "\033[94m"
-        assert theme.RESET == "\033[0m"
-        assert theme.BORDER_COLOR == "\033[90m"
+def test_game_make_valid_move():
+    """Test that a valid move updates the board and switches players."""
+    game = Game()
+    game.make_move(0, 0)
+    assert game.board[0][0] == 'X', "Move should update the board"
+    assert game.current_player == 'O', "Player should switch after valid move"
+    assert game.game_over is False, "Game should not be over after valid move"
 
-class TestStandardWinStrategy:
-    def test_empty_board(self, win_strategy):
-        """Ensure no winner is detected on an empty board."""
-        board = [[None for _ in range(3)] for _ in range(3)]
-        assert win_strategy.check_winner(board) is None
+def test_game_make_invalid_move_out_of_bounds():
+    """Test that making a move with out-of-bounds coordinates raises ValueError."""
+    game = Game()
+    with pytest.raises(ValueError, match="Row and column must be between 0 and 2"):
+        game.make_move(3, 0)
 
-    @pytest.mark.parametrize("row_idx", [0, 1, 2])
-    def test_row_wins(self, win_strategy, row_idx):
-        """Test all horizontal win conditions for both players."""
-        for player in ["X", "O"]:
-            board = [[None for _ in range(3)] for _ in range(3)]
-            board[row_idx] = [player, player, player]
-            assert win_strategy.check_winner(board) == player
+def test_game_make_invalid_move_occupied_cell():
+    """Test that making a move on an occupied cell raises ValueError."""
+    game = Game()
+    game.make_move(0, 0)
+    with pytest.raises(ValueError, match="Cell already occupied"):
+        game.make_move(0, 0)
 
-    @pytest.mark.parametrize("col_idx", [0, 1, 2])
-    def test_column_wins(self, win_strategy, col_idx):
-        """Test all vertical win conditions for both players."""
-        for player in ["X", "O"]:
-            board = [[None for _ in range(3)] for _ in range(3)]
-            for r in range(3):
-                board[r][col_idx] = player
-            assert win_strategy.check_winner(board) == player
+def test_game_win_row():
+    """Test that a win by completing a row sets the winner and ends the game."""
+    game = Game()
+    game.make_move(0, 0)
+    game.make_move(0, 1)
+    game.make_move(0, 2)
+    assert game.winner == 'X', "Winner should be X after row win"
+    assert game.game_over is True, "Game should be over after win"
 
-    def test_diagonal_wins(self, win_strategy):
-        """Test both diagonal win conditions."""
-        # Main diagonal
-        board1 = [["X", None, None], [None, "X", None], [None, None, "X"]]
-        assert win_strategy.check_winner(board1) == "X"
-        
-        # Anti-diagonal
-        board2 = [[None, None, "O"], [None, "O", None], ["O", None, None]]
-        assert win_strategy.check_winner(board2) == "O"
+def test_game_win_column():
+    """Test that a win by completing a column sets the winner and ends the game."""
+    game = Game()
+    game.make_move(0, 0)
+    game.make_move(1, 0)
+    game.make_move(2, 0)
+    assert game.winner == 'X', "Winner should be X after column win"
+    assert game.game_over is True, "Game should be over after win"
 
-    def test_no_winner_partial_board(self, win_strategy):
-        """Test that no winner is returned when the board is partially filled but no win exists."""
-        board = [
-            ["X", "O", "X"],
-            [None, "X", None],
-            ["O", None, "O"]
-        ]
-        assert win_strategy.check_winner(board) is None
+def test_game_win_diagonal_top_left_to_bottom_right():
+    """Test that a win by completing the main diagonal sets the winner and ends the game."""
+    game = Game()
+    game.make_move(0, 0)
+    game.make_move(1, 1)
+    game.make_move(2, 2)
+    assert game.winner == 'X', "Winner should be X after diagonal win"
+    assert game.game_over is True, "Game should be over after win"
 
-class TestGameBoardUI:
-    def test_render_output(self, theme):
-        """Verify that the render method executes without error and contains theme strings."""
-        ui = GameBoardUI(theme)
-        board = [["X", "O", None], [None, None, None], [None, None, None]]
-        scores = (1, 0)
-        
-        with patch('sys.stdout', new=StringIO()) as fake_out:
-            ui.render(board, GameStatus.IN_PROGRESS, scores)
-            output = fake_out.getvalue()
-            assert "Green Tic Tac Toe" in output
-            assert "Score: X [1] - O [0]" in output
-            assert "\033[92mX" in output  # Green X
-            assert "\033[94mO" in output  # Blue O
+def test_game_win_diagonal_top_right_to_bottom_left():
+    """Test that a win by completing the anti-diagonal sets the winner and ends the game."""
+    game = Game()
+    game.make_move(0, 2)
+    game.make_move(1, 1)
+    game.make_move(2, 0)
+    assert game.winner == 'X', "Winner should be X after anti-diagonal win"
+    assert game.game, "Game should be over after win"
 
-class TestGameLogicController:
-    def test_initialization(self, game_controller):
-        """Check if the game starts with the correct initial state."""
-        assert game_controller.current_player == "X"
-        assert game_controller.status == GameStatus.IN_PROGRESS
-        assert game_controller.scores == [0, 0]
-        assert all(all(cell is None for cell in row) for row in game_controller.board)
+def test_game_draw():
+    """Test that a full board with no winner results in a draw."""
+    game = Game()
+    # Fill the board with X and O alternately
+    moves = [(0,0), (0,1), (0,2),
+             (1,0), (1,1), (1,2),
+             (2,0), (2,1), (2,2)]
+    for row, col in moves:
+        game.make_move(row, col)
+    assert game.winner is None, "Winner should be None after draw"
+    assert game.game_over is True, "Game should be over after draw"
 
-    def test_valid_move(self, game_controller):
-        """Test making a valid move updates the board and switches player."""
-        success = game_controller.make_move(0, 0)
-        assert success is True
-        assert game_controller.board[0][0] == "X"
-        assert game_controller.current_player == "O"
+def test_game_make_move_after_game_over():
+    """Test that making a move after the game is over raises ValueError."""
+    game = Game()
+    game.make_move(0, 0)
+    game.make_move(0, 1)
+    game.make_move(0, 2)
+    with pytest.raises(ValueError, match="Game is already over"):
+        game.make_move(0, 0)
 
-    def test_invalid_move_occupied(self, game_controller):
-        """Test that moving to an occupied cell returns False and doesn't switch player."""
-        game_controller.make_move(1, 1)
-        success = game_controller.make_move(1, 1)
-        assert success is False
-        assert game_controller.current_player == "O"
+def test_game_reset_game():
+    """Test that reset_game restores the game to its initial state."""
+    game = Game()
+    game.make_move(0, 0)
+    game.reset_game()
+    assert game.board == [['' for _ in range(3)] for _ in range(3)], "Board should be reset"
+    assert game.current_player == 'X', "Current player should be X"
+    assert game.winner is None, "Winner should be None"
+    assert game.game_over is False, "Game should not be over"
 
-    def test_move_out_of_bounds(self, game_controller):
-        """Test that moves outside the 3x3 grid are handled gracefully."""
-        with patch('sys.stdout', new=StringIO()):
-            assert game_controller.make_move(3, 0) is False
-            assert game_controller.make_move(-1, 2) is False
+def test_game_get_status():
+    """Test that get_status returns the correct game state dictionary."""
+    game = Game()
+    expected_status = {
+        'winner': None,
+        'game_over': False,
+        'current_player': 'X',
+        'board': [['' for _ in range(3)] for _ in range(3)],
+        'theme': ConfigManager().get_theme()
+    }
+    assert game.get_status() == expected_status, "Status should match expected values"
 
-    def test_win_updates_score_and_status(self, game_controller):
-        """Verify that a winning move updates the score and game status."""
-        # X wins on top row
-        game_controller.make_move(0, 0) # X
-        game_controller.make_move(1, 0) # O
-        game_controller.make_move(0, 1) # X
-        game_controller.make_move(1, 1) # O
-        game_controller.make_move(0, 2) # X
-        
-        assert game_controller.status == GameStatus.X_WON
-        assert game_controller.scores == [1, 0]
-        # Ensure player doesn't switch after win
-        assert game_controller.current_player == "X"
+def test_game_get_board_copy():
+    """Test that get_board returns a copy of the board, not the original."""
+    game = Game()
+    board_copy = game.get_board()
+    board_copy[0][0] = 'X'
+    assert game.board[0][0] == '', "Board should remain unchanged after copy modification"
+    assert board_copy[0][0] == 'X', "Copy should have the modified value"
 
-    def test_draw_condition(self, game_controller):
-        """Verify that a full board with no winner results in a DRAW status."""
-        moves = [(0, 0), (0, 1), (0, 2), (1, 1), (1, 0), (1, 2), (2, 1), (2, 0), (2, 2)]
-        for r, c in moves:
-            game_controller.make_move(r, c)
-        
-        assert game_controller.status == GameStatus.DRAW
-        assert game_controller.scores == [0, 0]
-
-    def test_reset_game(self, game_controller):
-        """Verify that resetting the game clears the board but preserves scores."""
-        game_controller.make_move(0, 0)
-        game_controller.scores = [5, 3]
-        game_controller.status = GameStatus.X_WON
-        
-        game_controller.reset_game()
-        assert game_controller.status == GameStatus.IN_PROGRESS
-        assert game_controller.current_player == "X"
-        assert game_controller.scores == [5, 3]
-        assert all(all(cell is None for cell in row) for row in game_controller.board)
-
-    def test_move_after_game_over(self, game_controller):
-        """Ensure moves are rejected if the game status is not IN_PROGRESS."""
-        game_controller.status = GameStatus.X_WON
-        success = game_controller.make_move(0, 0)
-        assert success is False
-
-    @patch('builtins.input')
-    def test_start_loop_quit(self, mock_input, game_controller):
-        """Test the game loop termination when user chooses not to play again."""
-        # Setup: Win the game immediately then input 'n'
-        game_controller.status = GameStatus.X_WON
-        mock_input.side_effect = ['n']
-        
-        with patch('sys.stdout', new=StringIO()):
-            game_controller.start_loop()
-        
-        assert mock_input.called
-
-    @patch('builtins.input')
-    def test_start_loop_play_again(self, mock_input, game_controller):
-        """Test the game loop reset functionality."""
-        # Setup: Win, play again ('y'), then quit ('n')
-        game_controller.status = GameStatus.X_WON
-        mock_input.side_effect = ['y', 'n']
-        
-        with patch('sys.stdout', new=StringIO()):
-            # We need to mock make_move to prevent infinite loop if status doesn't change
-            # But here we manually set status to X_WON to trigger the choice
-            with patch.object(GameLogicController, 'reset_game', wraps=game_controller.reset_game) as mock_reset:
-                game_controller.start_loop()
-                assert mock_reset.called
-
-    @patch('builtins.input')
-    def test_start_loop_invalid_input(self, mock_input, game_controller):
-        """Test the game loop handling of malformed input."""
-        # Setup: Provide bad input, then a valid move, then win/quit
-        mock_input.side_effect = ['invalid', '0 0', 'n']
-        
-        # Mock make_move to change status to end loop
-        def side_effect_move(r, c):
-            game_controller.status = GameStatus.X_WON
-            return True
-        
-        with patch.object(game_controller, 'make_move', side_effect=side_effect_move):
-            with patch('sys.stdout', new=StringIO()) as fake_out:
-                game_controller.start_loop()
-                assert "Invalid input" in fake_out.getvalue()
-
-    def test_make_move_exception_handling(self, game_controller):
-        """Test that make_move catches unexpected index errors."""
-        with patch('sys.stdout', new=StringIO()) as fake_out:
-            # Trigger IndexError manually through logic if possible, or just check the try-except
-            result = game_controller.make_move(10, 10)
-            assert result is False
-            assert "Error processing move" in fake_out.getvalue()
-
-    def test_o_win_updates_score(self, game_controller):
-        """Verify O winning increments O's score."""
-        # X: (0,0), O: (1,0), X: (0,1), O: (1,1), X: (2,2), O: (1,2)
-        moves = [(0, 0), (1, 0), (0, 1), (1, 1), (2, 2), (1, 2)]
-        for r, c in moves:
-            game_controller.make_move(r, c)
-        
-        assert game_controller.status == GameStatus.O_WON
-        assert game_controller.scores == [0, 1]
-
-if __name__ == "__main__":
-    pytest.main([__file__])
+def test_game_multiple_moves_and_status():
+    """Test that multiple moves update the game status correctly."""
+    game = Game()
+    game.make_move(0, 0)
+    game.make_move(1, 1)
+    game.make_move(2, 2)
+    status = game.get_status()
+    assert status['winner'] == 'X', "Winner should be X after diagonal win"
+    assert status['game_over'] is True, "Game should be over after win"
+    assert status['board'][0][0] == 'X', "Board should reflect the moves"
+    assert status['current_player'] == 'O', "Current player should be O after X's move"
